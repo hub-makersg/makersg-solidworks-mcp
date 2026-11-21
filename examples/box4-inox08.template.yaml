@@ -1,0 +1,42 @@
+# Hộp 4 vách inox 0.8 mm: đáy có lỗ đui đèn, hai vách hoa văn lục giác,
+# vách trước khắc chữ, vách trước/sau có mép gập vào trong,
+# vách trái/phải có tab cắm vào khe của tấm nắp (lắp không cần hàn).
+name: box4-inox08
+material: stainless
+thickness: 0.8
+shop: default
+coat_um: 80
+params:
+  width: 200
+  depth: 200
+  height: 80
+  label: LUMI
+parts:
+  - name: shade
+    width: "{width}"
+    depth: "{depth}"
+    walls:
+      front: {height: "{height}", lip: 8}
+      back: {height: "{height}", lip: 8}
+      left: {height: "{height}"}
+      right: {height: "{height}"}
+    holes:
+      - {face: base, d: 40}
+    patterns:
+      - {face: left, kind: hex, size: 8, web: 2, margin: 6}
+      - {face: right, kind: hex, size: 8, web: 2, margin: 6}
+    texts:
+      - {face: front, text: "{label}", height: 20, y: 40}
+    tabs:
+      - {wall: left, at: [-50, 50], width: 8}
+      - {wall: right, at: [-50, 50], width: 8}
+  - name: cap
+    width: "{width} + 20"
+    depth: "{depth} + 20"
+    holes:
+      - {face: base, d: 30}
+    slots:
+      - {face: base, x: "-{width} / 2 + 0.4", y: -50, tab_width: 8, angle: 90}
+      - {face: base, x: "-{width} / 2 + 0.4", y: 50, tab_width: 8, angle: 90}
+      - {face: base, x: "{width} / 2 - 0.4", y: -50, tab_width: 8, angle: 90}
+      - {face: base, x: "{width} / 2 - 0.4", y: 50, tab_width: 8, angle: 90}
