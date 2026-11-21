@@ -147,7 +147,10 @@ class _Builder:
                 extra, angle, kind = wall.hem.length - self.bm.inset(180), 180, "hem"
             else:
                 u_top, extra, angle, kind = wall.height - self.c, 0.0, 0, ""
-            self.solids.append(f.rect(f.s0, f.s1, 0, u_top))
+            # Beside a lip or hem the wall stops at the bend tangent, so it does not
+            # stand above the folded edge.
+            tangent = u_top - (self.bm.allowance(angle) / 2 if kind else 0.0)
+            self.solids.append(f.rect(f.s0, f.s1, 0, tangent))
             a, b = ADJACENT[side]  # neighbours at the s0 and s1 ends
             self._wall_bend(side, f)
             if kind:
@@ -157,7 +160,7 @@ class _Builder:
                     raise GeometryError(
                         f"{self.part.name}.{side}: {kind} quá ngắn sau khi chừa góc."
                     )
-                self.solids.append(f.rect(lo, hi, u_top, u_top + extra))
+                self.solids.append(f.rect(lo, hi, tangent - 0.01, u_top + extra))
                 for s_edge, s_out in ((lo, lo - self.t), (hi, hi + self.t)):
                     if abs(s_edge - (f.s0 if s_out < s_edge else f.s1)) > 1e-9:
                         self.voids.append(
