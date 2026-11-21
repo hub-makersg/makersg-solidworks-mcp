@@ -47,6 +47,7 @@ class BuildResult:
     errors: list[str] = field(default_factory=list)
     bbox: tuple[float, ...] = ()  # mm: x0, y0, z0, x1, y1, z1 of the folded body
     bodies: int = 0
+    doc: object = field(default=None, repr=False, compare=False)  # open IModelDoc2
 
 
 class BuildError(RuntimeError):
@@ -213,7 +214,7 @@ def build(sw: Sw, blank: Blank, path: Path) -> BuildResult:
     bbox, bodies = body_bbox(sw, d.doc)
     errors += feature_errors(sw, d.doc)
     return BuildResult(
-        title=d.doc.GetTitle(), path=str(path), errors=errors, bbox=bbox, bodies=bodies
+        title=d.doc.GetTitle(), path=str(path), errors=errors, bbox=bbox, bodies=bodies, doc=d.doc
     )
 
 

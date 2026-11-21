@@ -31,7 +31,10 @@ QUIET_TOGGLES = {
     "sw3MFShowInfoOnSave": False,
     "swSTLPreview": False,
     "swDXFDontShowMap": True,
+    "swSTLBinaryFormat": True,
+    "swSTLDontTranslateToPositive": True,  # keep model coordinates in STL/3MF
 }
+QUIET_INTS = {"swExportStlUnits": 0}  # millimetres for STL and 3MF
 
 
 class SolidWorksNotRunning(RuntimeError):
@@ -61,6 +64,7 @@ class Sw:
     lib: Any
     const: Any
     _saved_toggles: dict[str, bool] = field(default_factory=dict)
+    _saved_ints: dict[str, int] = field(default_factory=dict)
 
     def typed(self, obj: Any, iface: str) -> Any:
         """Wrap a COM object returned by SolidWorks with the generated interface class."""
@@ -78,11 +82,18 @@ class Sw:
             key = getattr(self.const, name)
             self._saved_toggles.setdefault(name, bool(self.app.GetUserPreferenceToggle(key)))
             self.app.SetUserPreferenceToggle(key, value)
+        for name, value in QUIET_INTS.items():
+            key = getattr(self.const, name)
+            self._saved_ints.setdefault(name, int(self.app.GetUserPreferenceIntegerValue(key)))
+            self.app.SetUserPreferenceIntegerValue(key, value)
 
     def restore(self) -> None:
         for name, value in self._saved_toggles.items():
             self.app.SetUserPreferenceToggle(getattr(self.const, name), value)
+        for name, value in self._saved_ints.items():
+            self.app.SetUserPreferenceIntegerValue(getattr(self.const, name), value)
         self._saved_toggles.clear()
+        self._saved_ints.clear()
 
     def revision(self) -> str:
         return str(self.app.RevisionNumber())
