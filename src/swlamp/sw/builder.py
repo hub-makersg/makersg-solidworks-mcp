@@ -59,8 +59,10 @@ def open_titles(sw: Sw) -> list[str]:
     return [sw.typed(d, "IModelDoc2").GetTitle() for d in docs]
 
 
-def _title_of(path: Path) -> str:
-    return path.stem
+def ensure_not_open(sw: Sw, title: str) -> None:
+    """SolidWorks cannot open two documents with the same name; it hands back the open one."""
+    if any(Path(t).stem.lower() == title.lower() for t in open_titles(sw)):
+        raise BuildError(f"SolidWorks đang mở một tài liệu tên '{title}'; đóng nó rồi thử lại.")
 
 
 class _Doc:
@@ -165,7 +167,6 @@ def _bend(d: _Doc, blank: Blank, bend) -> str | None:
 def _hide_sketches(d: _Doc) -> None:
     for f in d.features():
         if f.GetTypeName2() == "ProfileFeature":
-            d.doc.ClearSelection2(True)
             f.Select2(False, 0)
             d.doc.BlankSketch()
     d.doc.ClearSelection2(True)
@@ -195,26 +196,36 @@ def feature_errors(sw: Sw, doc) -> list[str]:
 
 def build(sw: Sw, blank: Blank, path: Path) -> BuildResult:
     """Create, save and keep open the part for ``blank`` at ``path`` (order-unique name)."""
-    title = _title_of(path)
-    if any(t.lower().startswith(title.lower()) for t in open_titles(sw)):
-        raise BuildError(f"SolidWorks đang mở một tài liệu tên '{title}'; đóng nó rồi thử lại.")
+    ensure_not_open(sw, path.stem)
     template = sw.app.GetUserPreferenceStringValue(sw.const.swDefaultTemplatePart)
     raw = sw.app.NewDocument(template, 0, 0, 0)
     if raw is None:
         raise BuildError("SolidWorks không tạo được part mới.")
     d = _Doc(sw, raw)
+    try:
+        return _build_into(sw, d, blank, path)
+    except BaseException:
+        sw.app.CloseDoc(d.doc.GetTitle())
+        raise
+
+
+def _build_into(sw: Sw, d: _Doc, blank: Blank, path: Path) -> BuildResult:
     view = sw.typed(d.doc.ActiveView, "IModelView")
-    sw.app.CommandInProgress = True  # fewer redraws for out-of-process callers
+    # Batch mode for out-of-process callers: no redraws, no tree refresh, sketch
+    # entities added straight to the database.
+    sw.app.CommandInProgress = True
     view.EnableGraphicsUpdate = False
+    d.fm.EnableFeatureTree = False
+    d.sk.DisplayWhenAdded = False
     try:
         _base_flange(d, blank)
         errors = [e for e in (_bend(d, blank, b) for b in blank.bends) if e]
+        _hide_sketches(d)
     finally:
+        d.sk.DisplayWhenAdded = True
+        d.fm.EnableFeatureTree = True
         view.EnableGraphicsUpdate = True
         sw.app.CommandInProgress = False
-    _hide_sketches(d)
-    d.doc.ShowNamedView2("*Isometric", 7)
-    d.doc.ViewZoomtofit2()
     ok, err, _warn = d.ext.SaveAs3(str(path), 0, sw.const.swSaveAsOptions_Silent, None, None, 0, 0)
     if not ok:
         raise BuildError(f"Không lưu được part {path} (mã lỗi {err}).")

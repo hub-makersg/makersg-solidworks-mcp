@@ -7,6 +7,7 @@ matches the DXF. Every SolidWorks document the run opened is closed again.
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,7 +17,7 @@ from ..config import output_root
 from ..dxfcheck.compare import compare
 from ..dxfcheck.validate import validate
 from ..dxfcheck.write import write_dxf
-from ..geometry.blank import Blank, GeometryError, build_blank
+from ..geometry.blank import Blank, build_blank
 from ..geometry.preview import render
 from ..kfactor.table import Key, KTable, Lookup
 from ..paths import Guard, new_order_dir
@@ -90,9 +91,12 @@ class SolidWorksSteps:
                         export.mesh(sw, model, m)
                 return outcomes
             finally:
-                for title in opened:
-                    builder.close(sw, title)
-                sw.restore()
+                try:
+                    for title in opened:
+                        with contextlib.suppress(Exception):
+                            builder.close(sw, title)
+                finally:
+                    sw.restore()
 
         return self.worker.run(job, timeout=1800)
 
@@ -112,6 +116,18 @@ def _load(value: dict | str | Path | None) -> dict | None:
     return load_yaml(value)
 
 
+def plan(template: dict, order: Order | None, table: KTable) -> tuple[Lamp, Lookup, list[Blank]]:
+    """Resolve the spec, check the rules and compute every flat blank (no SolidWorks)."""
+    lamp = resolve(template, order)
+    key = Key(lamp.material, lamp.thickness, lamp.shop, lamp.die_v)
+    lookup = table.lookup(key)
+    check(lamp, lookup.radius, key.die)
+    missing = [pp.model for pp in lamp.printed_parts if not Path(pp.model).is_file()]
+    if missing:
+        raise SpecError(f"Không thấy model chi tiết in: {', '.join(missing)}")
+    return lamp, lookup, [build_blank(lamp, p, lookup) for p in lamp.parts]
+
+
 def run_order(
     template: dict | str | Path,
     order: dict | str | Path | None,
@@ -120,14 +136,8 @@ def run_order(
     root: Path | None = None,
 ) -> OrderReport:
     table = table or KTable()
-    tpl = _load(template)
-    order_data = _load(order) or {"order_id": "draft"}
-    order_obj = Order.model_validate(order_data)
-    lamp: Lamp = resolve(tpl, order_obj)
-    key = Key(lamp.material, lamp.thickness, lamp.shop, lamp.die_v)
-    lookup: Lookup = table.lookup(key)
-    check(lamp, lookup.radius, key.die)
-    blanks = [build_blank(lamp, p, lookup) for p in lamp.parts]
+    order_obj = Order.model_validate(_load(order) or {"order_id": "draft"})
+    lamp, lookup, blanks = plan(_load(template), order_obj, table)
 
     folder = new_order_dir(root or output_root(), order_obj.order_id)
     guard = Guard(folder)
@@ -152,7 +162,7 @@ def run_order(
             PrintedJob(
                 part=pp,
                 source=src,
-                copy=guard.path(f"{src.stem}__{oid}{src.suffix}"),
+                copy=guard.path(f"{pp.name}__{oid}{src.suffix}"),
                 meshes=[guard.path(f"{pp.name}__{oid}.3mf"), guard.path(f"{pp.name}__{oid}.stl")],
             )
         )
@@ -187,7 +197,7 @@ def run_order(
                 pr.files = [dxf.name, pj.sldprt.name, *(m.name for m in pj.meshes)]
                 report.images += [str(pj.image), str(preview)]
             report.printed = [m.name for j in printed_jobs for m in j.meshes]
-    except Exception as exc:  # reported in the summary; the order folder keeps no shop DXF
+    except Exception as exc:
         report.errors.append(str(exc))
     finally:
         shutil.rmtree(check_dir, ignore_errors=True)
@@ -199,13 +209,3 @@ def run_order(
             pr.files = []
     write(report, folder)
     return report
-
-
-__all__ = [
-    "GeometryError",
-    "OrderReport",
-    "SolidWorksSteps",
-    "SpecError",
-    "Steps",
-    "run_order",
-]

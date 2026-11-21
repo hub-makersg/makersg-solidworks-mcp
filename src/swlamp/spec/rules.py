@@ -129,11 +129,11 @@ def _check_part(part: Part, t: float, radius: float, flange: float, problems: li
             tab.width >= max(2 * t, 3.2),
             f"{p}: tab rộng {tab.width:g} < tối thiểu {max(2 * t, 3.2):.1f} mm",
         )
-        length = tab.length or (tab.mating_thickness or t) + 2
+        length = tab.effective_length(t)
         need(length <= 5 * tab.width, f"{p}: tab dài {length:g} vượt 5 × bề rộng")
     for s in part.slots:
         half_w = s.tab_width / 2 + 0.5
-        half_h = (s.tab_thickness or t) / 2 + 0.5
+        half_h = s.effective_thickness(t) / 2 + 0.5
         hx, hy = (half_w, half_h) if s.angle == 0 else (half_h, half_w)
         inside(s.face, f"khe tại ({s.x:g}, {s.y:g})", s.x - hx, s.y - hy, s.x + hx, s.y + hy)
 

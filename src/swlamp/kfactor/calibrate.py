@@ -14,6 +14,7 @@ import math
 import statistics
 from dataclasses import dataclass
 
+from ..geometry.bends import BendMath
 from .table import CALIBRATED, Entry, Key, KTable, assumed_radius
 
 COUPON_WIDTH = 100.0
@@ -44,9 +45,7 @@ def back_solve(flat_length: float, a: float, b: float, thickness: float, radius:
 
 def coupon_flat_length(key: Key, k: float, radius: float) -> float:
     """Flat length of a coupon whose legs measure COUPON_LEG outside when bent with (k, radius)."""
-    t = key.thickness
-    ba = math.pi / 2 * (radius + k * t)
-    return 2 * COUPON_LEG - (2 * (radius + t) - ba)
+    return 2 * COUPON_LEG - 2 * BendMath(key.thickness, radius, k).inset(90)
 
 
 def calibrate(

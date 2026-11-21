@@ -12,7 +12,6 @@ A fresh thread is only started once a short probe call succeeds again.
 
 from __future__ import annotations
 
-import asyncio
 import concurrent.futures as cf
 import queue
 import threading
@@ -46,7 +45,7 @@ class _Thread:
         _com_init()
         try:
             self.ready.set_result(on_start() if on_start else None)
-        except BaseException as exc:  # surfaced to the first caller
+        except BaseException as exc:
             self.ready.set_exception(exc)
         while True:
             item = self.jobs.get()
@@ -122,7 +121,15 @@ class StaWorker:
         """Run ``fn(context)`` on the worker thread and wait for its result."""
         t = self._current()
         limit = self._timeout if timeout is None else timeout
-        ctx = t.ready.result(timeout=limit)
+        try:
+            ctx = t.ready.result(timeout=limit)
+        except BaseException:
+            # Startup failed (e.g. SolidWorks not open yet): start afresh next time.
+            with self._lock:
+                if self._thread is t:
+                    t.stop()
+                    self._thread = None
+            raise
         fut = t.submit(lambda: fn(ctx))
         try:
             return fut.result(timeout=limit)
@@ -133,9 +140,6 @@ class StaWorker:
             raise SolidWorksBusy(
                 f"SolidWorks không trả lời sau {limit:.0f} s (có thể đang mở hộp thoại)."
             ) from None
-
-    async def arun(self, fn: Callable[[Any], Any], timeout: float | None = None) -> Any:
-        return await asyncio.to_thread(self.run, fn, timeout)
 
     def close(self) -> None:
         with self._lock:

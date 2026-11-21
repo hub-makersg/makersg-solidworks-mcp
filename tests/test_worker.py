@@ -1,4 +1,3 @@
-import asyncio
 import threading
 import time
 
@@ -14,12 +13,6 @@ def test_job_runs_on_worker_thread_and_returns_result():
     assert result[0] == "ctx"
     assert result[1] != caller
     assert w.run(lambda ctx: threading.get_ident()) == result[1]
-    w.close()
-
-
-def test_async_run_returns_result():
-    w = StaWorker()
-    assert asyncio.run(w.arun(lambda ctx: 41 + 1)) == 42
     w.close()
 
 
@@ -60,3 +53,19 @@ def test_on_start_failure_reaches_caller():
     w = StaWorker(on_start=boom)
     with pytest.raises(RuntimeError, match="no solidworks"):
         w.run(lambda ctx: 1)
+
+
+def test_worker_retries_attach_after_solidworks_is_started():
+    attempts = []
+
+    def attach():
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("SolidWorks chưa chạy")
+        return "sw"
+
+    w = StaWorker(on_start=attach)
+    with pytest.raises(RuntimeError, match="chưa chạy"):
+        w.run(lambda ctx: ctx)
+    assert w.run(lambda ctx: ctx) == "sw"
+    w.close()

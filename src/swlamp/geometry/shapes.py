@@ -30,7 +30,7 @@ class Loop:
 Cut = Circle | Loop
 
 
-def loops_of(poly: Polygon) -> list[Loop]:
+def loop_of(poly: Polygon) -> Loop:
     """Exterior ring of a polygon as a cut loop; callers reject interiors (islands) first."""
     coords = list(poly.exterior.coords)[:-1]
-    return [Loop(tuple((round(x, 6), round(y, 6)) for x, y in coords))]
+    return Loop(tuple((round(x, 6), round(y, 6)) for x, y in coords))

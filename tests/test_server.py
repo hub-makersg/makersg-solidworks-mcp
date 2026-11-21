@@ -1,4 +1,5 @@
 import asyncio
+import math
 from pathlib import Path
 
 import pytest
@@ -61,24 +62,28 @@ def test_validate_spec_gives_flat_size():
     )
     assert not result.is_error
     data = result.structured_content
-    assert data["parts"][0]["part"] == "shade"
+    shade = data["parts"][0]
+    assert shade["part"] == "shade"
     assert data["k_status"] == "provisional"
+    # Stainless 0.8 on an assumed 4.8 mm die: R = 1.008, provisional K = 0.42.
+    t, r, k = 0.8, 0.21 * 4.8, 0.42
+    c = (r + t) - math.pi / 4 * (r + k * t)
+    width = 2 * (100 - c + 80 - c + (t + 2))  # walls 80 high, tabs T + 2 mm
+    depth = 2 * (100 - c + 80 - 2 * c + 8 - c)  # front/back walls with an 8 mm lip
+    assert shade["flat_mm"] == pytest.approx([width, depth], abs=0.01)
 
 
 def test_calibration_record_updates_table():
+    t, r, k_true, flat = 0.8, 0.21 * 4.8, 0.44, 77.9
+    bd = 2 * (r + t) - math.pi / 2 * (r + k_true * t)
+    leg = (flat + bd) / 2
     server = create_server()
     result = call(
         server,
         "calibration_record",
-        {
-            "material": "stainless",
-            "thickness": 0.8,
-            "flat_length": 77.9,
-            "a": [40.3],
-            "b": [40.3],
-        },
+        {"material": "stainless", "thickness": t, "flat_length": flat, "a": [leg], "b": [leg]},
     )
     assert not result.is_error
-    k = result.structured_content["k"]
+    assert result.structured_content["k"] == pytest.approx(k_true, abs=1e-4)
     rows = call(server, "k_table", {}).structured_content["rows"]
-    assert rows["default|stainless|0.8|auto"]["k"] == pytest.approx(k, abs=1e-4)
+    assert rows["default|stainless|0.8|auto"]["k"] == pytest.approx(k_true, abs=1e-4)

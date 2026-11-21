@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .shapes import Loop
 
-BARE_CLEARANCE = 0.25  # mm total: two laser-cut tolerances
+BARE_CLEARANCE = 0.25  # two laser-cut tolerances
 
 
 def clearance(coat_um: float) -> float:

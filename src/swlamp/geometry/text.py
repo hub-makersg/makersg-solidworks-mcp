@@ -159,6 +159,8 @@ def lettering(
     minx, miny, maxx, maxy = merged.bounds
     merged = affinity.translate(merged, x - (minx + maxx) / 2, y - (miny + maxy) / 2)
     out = [p for p in _parts(merged) if p.area > 1e-6]
+    if any(p.interiors for p in out):
+        raise TextError(f"Không nối cầu được cho mọi lõi chữ của '{text}'; thử font khác.")
     min_size = _min_cap_height(cap_height, out, thickness)
     if min_size:
         raise TextError(

@@ -13,19 +13,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from . import config
-from .geometry.blank import build_blank
 from .geometry.preview import render
-from .kfactor.calibrate import calibrate
+from .kfactor.calibrate import COUPON_LEG, COUPON_WIDTH, calibrate
 from .kfactor.table import Key, KTable
-from .order.pipeline import SolidWorksSteps, run_order
-from .spec.merge import SpecError, resolve
+from .order.pipeline import SolidWorksSteps, plan, run_order
+from .spec.merge import SpecError, load_yaml, parse_yaml
 from .spec.models import Material, Order
-from .spec.rules import check
 
 INSTRUCTIONS = """\
 Thiết kế đèn decor tôn (cắt laser + chấn) trên SolidWorks 2025 đang mở.
@@ -52,28 +49,21 @@ def _yaml(value: str | None) -> dict | None:
     if value is None or value == "":
         return None
     if "\n" not in value and Path(value).suffix.lower() in (".yaml", ".yml"):
-        path = Path(value)
-        if not path.exists():
-            raise SpecError(f"Không thấy file {path}")
-        value = path.read_text(encoding="utf-8")
-    try:
-        data = yaml.safe_load(value)
-    except yaml.YAMLError as exc:
-        raise SpecError(f"YAML lỗi cú pháp: {exc}") from None
-    if not isinstance(data, dict):
-        raise SpecError("YAML phải là một mapping.")
-    return data
+        if not Path(value).exists():
+            raise SpecError(f"Không thấy file {value}")
+        return load_yaml(value)
+    return parse_yaml(value)
 
 
 def _prepare(template: str, order: str | None):
-    tpl = _yaml(template)
     order_data = _yaml(order)
-    lamp = resolve(tpl, Order.model_validate(order_data) if order_data else None)
-    key = Key(lamp.material, lamp.thickness, lamp.shop, lamp.die_v)
-    lookup = KTable().lookup(key)
-    check(lamp, lookup.radius, key.die)
-    blanks = [build_blank(lamp, p, lookup) for p in lamp.parts]
-    return tpl, order_data, lamp, lookup, blanks
+    return plan(_yaml(template), Order.model_validate(order_data) if order_data else None, KTable())
+
+
+def _out_dir(name: str) -> Path:
+    out = config.output_root() / name
+    out.mkdir(parents=True, exist_ok=True)
+    return out
 
 
 def _part_info(blank, lookup) -> dict[str, Any]:
@@ -121,7 +111,7 @@ def create_server(enable_script: bool | None = None) -> MCPServer:
 
         template / order: đường dẫn file YAML hoặc nội dung YAML.
         """
-        _, _, lamp, lookup, blanks = _prepare(template, order)
+        lamp, lookup, blanks = _prepare(template, order)
         return {
             "ok": True,
             "material": lamp.material,
@@ -134,12 +124,11 @@ def create_server(enable_script: bool | None = None) -> MCPServer:
     @_user_errors
     def preview_flat(template: str, order: str | None = None, part: str | None = None) -> Image:
         """Ảnh PNG bản phẳng dự đoán của một part (mặc định part đầu tiên), không cần SolidWorks."""
-        _, _, _, _, blanks = _prepare(template, order)
+        _, _, blanks = _prepare(template, order)
         blank = next((b for b in blanks if part in (None, b.part)), None)
         if blank is None:
             raise SpecError(f"Không có part '{part}'.")
-        out = config.output_root() / "_preview"
-        out.mkdir(parents=True, exist_ok=True)
+        out = _out_dir("_preview")
         return Image(path=render(blank, out / f"{blank.part}.flat.png", size=800))
 
     @mcp.tool(name="run_order")
@@ -164,8 +153,7 @@ def create_server(enable_script: bool | None = None) -> MCPServer:
         """Ảnh isometric của tài liệu đang mở trong SolidWorks."""
         from .sw import export
 
-        out = config.output_root() / "_preview"
-        out.mkdir(parents=True, exist_ok=True)
+        out = _out_dir("_preview")
         path = out / "active.png"
         _get_worker().run(lambda sw: export.screenshot(sw, sw.app.ActiveDoc, path))
         return Image(path=path)
@@ -215,9 +203,9 @@ def create_server(enable_script: bool | None = None) -> MCPServer:
             "parts": [
                 {
                     "name": "coupon",
-                    "width": 100,
-                    "depth": 40,
-                    "walls": {"front": {"height": 40}},
+                    "width": COUPON_WIDTH,
+                    "depth": COUPON_LEG,
+                    "walls": {"front": {"height": COUPON_LEG}},
                     "texts": [
                         {"face": "base", "text": tag, "height": max(8.0, 10 * thickness), "y": 8}
                     ],
@@ -225,6 +213,14 @@ def create_server(enable_script: bool | None = None) -> MCPServer:
             ],
         }
         report = run_order(tpl, {"order_id": f"coupon-{tag}"}, SolidWorksSteps(_get_worker()))
+        if report.status != "ok":
+            return {
+                "folder": report.folder,
+                "status": report.status,
+                "errors": report.errors,
+                "next": "Thanh thử chưa tạo được; sửa các lỗi trên rồi gọi lại. "
+                "Không gửi gì cho xưởng.",
+            }
         flat = report.parts[0].flat_size[1]
         return {
             "folder": report.folder,
@@ -269,16 +265,16 @@ def create_server(enable_script: bool | None = None) -> MCPServer:
         """Xuất part đang mở trong SolidWorks ra 3MF hoặc STL (mm) vào thư mục _exports."""
         from .sw import export
 
-        if fmt.lower() not in ("3mf", "stl"):
+        fmt = fmt.lower()
+        if fmt not in ("3mf", "stl"):
             raise SpecError("fmt phải là '3mf' hoặc 'stl'.")
-        out = config.output_root() / "_exports"
-        out.mkdir(parents=True, exist_ok=True)
+        out = _out_dir("_exports")
 
         def job(sw):
             doc = sw.typed(sw.app.ActiveDoc, "IModelDoc2")
             sw.quiet()
             try:
-                return export.mesh(sw, doc, out / f"{Path(doc.GetTitle()).stem}.{fmt.lower()}")
+                return export.mesh(sw, doc, out / f"{Path(doc.GetTitle()).stem}.{fmt}")
             finally:
                 sw.restore()
 

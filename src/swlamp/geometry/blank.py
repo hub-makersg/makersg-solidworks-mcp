@@ -12,7 +12,7 @@ sketches can be drawn in the base plane.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
@@ -24,7 +24,7 @@ from . import artwork as art
 from . import patterns, tabslot
 from . import text as lettering
 from .bends import BendLine, BendMath
-from .shapes import Circle, Cut, Loop, loops_of
+from .shapes import Circle, Cut, Loop, loop_of
 
 CORNER_GAP = 0.3  # clearance between walls (and lips) meeting at a corner
 ADJACENT = {
@@ -50,7 +50,6 @@ class Blank:
     bends: list[BendLine]
     fixed_point: tuple[float, float]
     folded_bbox: tuple[float, float, float, float, float, float]
-    outer: dict[str, float] = field(default_factory=dict)
 
     @property
     def flat_bbox(self) -> tuple[float, float, float, float]:
@@ -123,9 +122,8 @@ class _Builder:
         self.voids: list[Polygon] = []
         self.bends: list[BendLine] = []
         self.cuts: list[Cut] = []
-        self.tab_top = 0.0
+        self.wall_tops: dict[str, float] = {}
 
-    # -- walls, lips, hems, tabs -------------------------------------------------
     def _intrusion(self, side: str) -> float:
         wall = self.part.walls.get(side)
         if wall is None:
@@ -137,7 +135,7 @@ class _Builder:
         return self.t
 
     def walls(self) -> None:
-        relief = self.r + self.t + 0.5
+        relief = self._relief()
         for side, wall in self.part.walls.items():
             f = self.frames[side]
             if wall.lip:
@@ -151,7 +149,8 @@ class _Builder:
             # stand above the folded edge.
             tangent = u_top - (self.bm.allowance(angle) / 2 if kind else 0.0)
             self.solids.append(f.rect(f.s0, f.s1, 0, tangent))
-            a, b = ADJACENT[side]  # neighbours at the s0 and s1 ends
+            self.wall_tops[side] = wall.height
+            a, b = ADJACENT[side]
             self._wall_bend(side, f)
             if kind:
                 lo = f.s0 + (self._intrusion(a) + CORNER_GAP if a in self.part.walls else 0)
@@ -175,13 +174,13 @@ class _Builder:
                     raise GeometryError(
                         f"{self.part.name}.{side}: tab không đặt được trên vách có {kind}."
                     )
-                length = tab.length or (tab.mating_thickness or self.t) + 2
+                length = tab.effective_length(self.t)
                 for at in tab.at:
                     s = f.s_of_face_x(at)
                     self.solids.append(
                         f.rect(s - tab.width / 2, s + tab.width / 2, u_top - 0.01, u_top + length)
                     )
-                self.tab_top = max(self.tab_top, length)
+                self.wall_tops[side] = max(self.wall_tops[side], wall.height + length)
 
     def _wall_bend(self, side: str, f: _Frame) -> None:
         if side in ("front", "back"):
@@ -192,7 +191,7 @@ class _Builder:
         self.bends.append(BendLine(*p1, *p2, angle=90, kind="wall", order=1))
 
     def corner_reliefs(self) -> None:
-        h = self.r + self.t + 0.5
+        h = self._relief()
         walls = self.part.walls
         for ys, xs in (("front", "left"), ("front", "right"), ("back", "left"), ("back", "right")):
             if ys in walls and xs in walls:
@@ -200,7 +199,6 @@ class _Builder:
                 cy = -self.edge["front"] if ys == "front" else self.edge["back"]
                 self.voids.append(box(cx - h, cy - h, cx + h, cy + h))
 
-    # -- cut features ------------------------------------------------------------
     def _map(self, face: str, fx: float, fy: float) -> tuple[float, float]:
         if face == "base":
             return (fx, fy)
@@ -226,6 +224,14 @@ class _Builder:
                 "bản thiết kế cần nhỏ lại hoặc dời đi."
             )
 
+    def _place(self, face: str, polys: list[Polygon], what: str) -> None:
+        self._fits(face, unary_union(polys), what)
+        self.cuts += [self._map_cut(face, loop_of(poly)) for poly in polys]
+
+    def _relief(self) -> float:
+        """Half-size of corner reliefs and depth of lip/hem end notches."""
+        return self.r + self.t + 0.5
+
     def features(self) -> None:
         p = self.part
         for h in p.holes:
@@ -242,24 +248,19 @@ class _Builder:
                 polys = lettering.lettering(tx.text, tx.height, self.t, tx.font, tx.x, tx.y)
             except lettering.TextError as exc:
                 raise GeometryError(f"{p.name}.{tx.face}: {exc}") from None
-            self._fits(tx.face, unary_union(polys), f"chữ '{tx.text}'")
-            for poly in polys:
-                self.cuts += [self._map_cut(tx.face, lp) for lp in loops_of(poly)]
+            self._place(tx.face, polys, f"chữ '{tx.text}'")
         for aw in p.artworks:
             try:
                 polys = art.load(aw.file, aw.width, aw.x, aw.y)
             except art.ArtworkError as exc:
                 raise GeometryError(f"{p.name}.{aw.face}: {exc}") from None
-            self._fits(aw.face, unary_union(polys), f"hình {aw.file}")
-            for poly in polys:
-                self.cuts += [self._map_cut(aw.face, lp) for lp in loops_of(poly)]
+            self._place(aw.face, polys, f"hình {aw.file}")
         for s in p.slots:
             lp = tabslot.slot(
-                s.x, s.y, s.tab_width, s.tab_thickness or self.t, s.angle, self.lamp.coat_um
+                s.x, s.y, s.tab_width, s.effective_thickness(self.t), s.angle, self.lamp.coat_um
             )
             self.cuts.append(self._map_cut(s.face, lp))
 
-    # -- assembly ----------------------------------------------------------------
     def build(self) -> Blank:
         self.walls()
         self.corner_reliefs()
@@ -291,8 +292,7 @@ class _Builder:
         base = box(-self.edge["left"], -self.edge["front"], self.edge["right"], self.edge["back"])
         fixed = base.buffer(-2 * (self.r + self.t)).intersection(free).representative_point()
         bends = sorted(self.bends, key=lambda b: (b.order, b.kind, round(b.y1, 6), round(b.x1, 6)))
-        top = max([w.height for w in self.part.walls.values()], default=0.0)
-        z1 = (top + self.tab_top - self.t) if self.part.walls else 0.0
+        z1 = (max(self.wall_tops.values()) - self.t) if self.part.walls else 0.0
         w, d = self.part.width, self.part.depth
         return Blank(
             part=self.part.name,
@@ -304,7 +304,6 @@ class _Builder:
             bends=bends,
             fixed_point=(round(fixed.x, 6), round(fixed.y, 6)),
             folded_bbox=(-w / 2, -d / 2, -self.t, w / 2, d / 2, z1),
-            outer={"width": w, "depth": d, "height": top},
         )
 
 

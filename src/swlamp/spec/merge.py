@@ -67,11 +67,18 @@ def _substitute(value: Any, params: dict[str, Any], where: str) -> Any:
     return _arith(text) if _ARITH.match(text) else text
 
 
-def load_yaml(path: str | Path) -> dict[str, Any]:
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+def parse_yaml(text: str, where: str = "YAML") -> dict[str, Any]:
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise SpecError(f"{where}: lỗi cú pháp YAML: {exc}") from None
     if not isinstance(data, dict):
-        raise SpecError(f"{path}: file YAML phải là một mapping.")
+        raise SpecError(f"{where}: YAML phải là một mapping.")
     return data
+
+
+def load_yaml(path: str | Path) -> dict[str, Any]:
+    return parse_yaml(Path(path).read_text(encoding="utf-8"), str(path))
 
 
 def resolve(template: dict[str, Any], order: Order | dict[str, Any] | None = None) -> Lamp:

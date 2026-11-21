@@ -12,7 +12,7 @@ import re
 import shutil
 from pathlib import Path
 
-from .builder import BuildError, feature_errors, open_titles
+from .builder import ensure_not_open, feature_errors
 from .connection import Sw
 
 _LHS = re.compile(r'^\s*"([^"]+)"\s*=')
@@ -42,8 +42,7 @@ def global_variables(sw: Sw, doc) -> dict[str, int]:
 
 def open_copy(sw: Sw, source: Path, dest: Path):
     """Copy ``source`` to ``dest`` and open the copy, never the original."""
-    if any(t.lower().startswith(dest.stem.lower()) for t in open_titles(sw)):
-        raise BuildError(f"SolidWorks đang mở một tài liệu tên '{dest.stem}'; đóng nó rồi thử lại.")
+    ensure_not_open(sw, dest.stem)
     if not source.exists():
         raise EquationError(f"Không thấy model chi tiết in: {source}")
     dest.parent.mkdir(parents=True, exist_ok=True)

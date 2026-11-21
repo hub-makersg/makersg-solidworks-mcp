@@ -85,6 +85,9 @@ class Tabs(_Model):
     length: float | None = Field(default=None, gt=0, description="Default: mating T + 2 mm")
     mating_thickness: float | None = Field(default=None, gt=0, description="Default: own T")
 
+    def effective_length(self, thickness: float) -> float:
+        return self.length or (self.mating_thickness or thickness) + 2
+
 
 class Slot(_Model):
     face: FaceName = "base"
@@ -93,6 +96,9 @@ class Slot(_Model):
     tab_width: float = Field(gt=0)
     tab_thickness: float | None = Field(default=None, gt=0, description="Default: own T")
     angle: Literal[0, 90] = 0
+
+    def effective_thickness(self, thickness: float) -> float:
+        return self.tab_thickness or thickness
 
 
 class Part(_Model):
