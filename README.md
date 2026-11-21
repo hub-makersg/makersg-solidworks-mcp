@@ -38,13 +38,13 @@ uv run swlamp-mcp --prepare   # tạo sẵn wrapper COM cho SolidWorks 2025
 Đăng ký với Claude Code:
 
 ```powershell
-claude mcp add --transport stdio swlamp --scope user -- uv run --directory C:\duong\dan\swlamp-mcp swlamp-mcp
+claude mcp add --transport stdio swlamp --scope user -- uv run --directory C:\duong\dan\makersg-solidworks-mcp swlamp-mcp
 ```
 
 Với Claude Desktop, thêm vào `claude_desktop_config.json`:
 
 ```json
-{ "mcpServers": { "swlamp": { "command": "uv", "args": ["run", "--directory", "C:\\duong\\dan\\swlamp-mcp", "swlamp-mcp"] } } }
+{ "mcpServers": { "swlamp": { "command": "uv", "args": ["run", "--directory", "C:\\duong\\dan\\makersg-solidworks-mcp", "swlamp-mcp"] } } }
 ```
 
 Mở SolidWorks trước khi gọi tool. MCP không tự khởi động SolidWorks.
