@@ -219,7 +219,8 @@ class _Builder:
         if not a.contains(x0, y0, x1, y1):
             raise GeometryError(
                 f"{self.part.name}.{face}: {what} vượt vùng cho phép "
-                f"(x {a.x0:.1f}…{a.x1:.1f}, y {a.y0:.1f}…{a.y1:.1f}); bản thiết kế cần nhỏ lại hoặc dời đi."
+                f"(x {a.x0:.1f}…{a.x1:.1f}, y {a.y0:.1f}…{a.y1:.1f}); "
+                "bản thiết kế cần nhỏ lại hoặc dời đi."
             )
 
     def features(self) -> None:
@@ -270,11 +271,12 @@ class _Builder:
         self.features()
         inner = outline.buffer(-self.t)
         shapes = [c.shape() for c in self.cuts]
-        for c, s in zip(self.cuts, shapes):
+        for c, s in zip(self.cuts, shapes, strict=True):
             if not inner.contains(s):
                 where = (c.cx, c.cy) if isinstance(c, Circle) else c.points[0]
                 raise GeometryError(
-                    f"{self.part.name}: chi tiết cắt gần ({where[0]:.1f}, {where[1]:.1f}) cách mép < {self.t:g} mm."
+                    f"{self.part.name}: chi tiết cắt gần ({where[0]:.1f}, {where[1]:.1f}) "
+                    f"cách mép < {self.t:g} mm."
                 )
         if shapes:
             union = unary_union(shapes)

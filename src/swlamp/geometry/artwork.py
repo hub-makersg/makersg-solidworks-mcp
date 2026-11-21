@@ -104,7 +104,8 @@ def load(file: str | Path, width: float, x: float = 0.0, y: float = 0.0) -> list
     islands = [p for p in out if p.interiors]
     if islands:
         raise ArtworkError(
-            f"Hình {path.name} có {sum(len(p.interiors) for p in islands)} đảo kín sẽ rơi ra khi cắt; "
+            f"Hình {path.name} có {sum(len(p.interiors) for p in islands)} đảo kín "
+            "sẽ rơi ra khi cắt; "
             "thêm cầu nối trong file hình rồi thử lại."
         )
     return out
