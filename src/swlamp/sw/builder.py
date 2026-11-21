@@ -47,6 +47,7 @@ class BuildResult:
     errors: list[str] = field(default_factory=list)
     bbox: tuple[float, ...] = ()  # mm: x0, y0, z0, x1, y1, z1 of the folded body
     bodies: int = 0
+    hits: list[tuple[float, float, float] | None] = field(default_factory=list)  # mm
     doc: object = field(default=None, repr=False, compare=False)  # open IModelDoc2
 
 
@@ -172,6 +173,46 @@ def _hide_sketches(d: _Doc) -> None:
     d.doc.ClearSelection2(True)
 
 
+def ray_hits(sw: Sw, doc, checks) -> list[tuple[float, float, float] | None]:
+    """First point where each checkpoint's ray meets the folded body (mm), or None.
+
+    One ``RayIntersections`` call covers every ray, so this costs a few COM round trips
+    whatever the part's complexity.
+    """
+    if not checks:
+        return []
+    import pythoncom
+    from win32com.client import VARIANT
+
+    part = sw.typed(doc, "IPartDoc")
+    bodies = list(part.GetBodies2(sw.const.swSolidBody, True) or ())
+    if not bodies:
+        return [None] * len(checks)
+    pts = [c * MM for cp in checks for c in cp.origin]
+    dirs = [c for cp in checks for c in cp.direction]
+    model = sw.typed(doc, "IModelDoc2")
+    options = sw.const.swRayPtsOptsNORMALS | sw.const.swRayPtsOptsENTRY_EXIT
+    count = model.RayIntersections(
+        VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH, bodies),
+        VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, pts),
+        VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, dirs),
+        options,
+        0.0,
+        0.0,
+    )
+    best: list[tuple[float, tuple[float, float, float]] | None] = [None] * len(checks)
+    if count:
+        flat = model.GetRayIntersectionsPoints() or ()
+        for i in range(0, len(flat), 9):  # body, ray, type, x, y, z, nx, ny, nz
+            ray = int(flat[i + 1])
+            hit = tuple(round(v / MM, 4) for v in flat[i + 3 : i + 6])
+            o = checks[ray].origin
+            dist = sum((a - b) ** 2 for a, b in zip(hit, o, strict=True))
+            if best[ray] is None or dist < best[ray][0]:
+                best[ray] = (dist, hit)
+    return [b[1] if b else None for b in best]
+
+
 def body_bbox(sw: Sw, doc) -> tuple[tuple[float, ...], int]:
     part = sw.typed(doc, "IPartDoc")
     bodies = part.GetBodies2(sw.const.swSolidBody, True) or ()
@@ -232,7 +273,13 @@ def _build_into(sw: Sw, d: _Doc, blank: Blank, path: Path) -> BuildResult:
     bbox, bodies = body_bbox(sw, d.doc)
     errors += feature_errors(sw, d.doc)
     return BuildResult(
-        title=d.doc.GetTitle(), path=str(path), errors=errors, bbox=bbox, bodies=bodies, doc=d.doc
+        title=d.doc.GetTitle(),
+        path=str(path),
+        errors=errors,
+        bbox=bbox,
+        bodies=bodies,
+        hits=ray_hits(sw, d.doc, blank.checks),
+        doc=d.doc,
     )
 
 

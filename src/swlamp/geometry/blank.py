@@ -12,7 +12,7 @@ sketches can be drawn in the base plane.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
@@ -24,6 +24,7 @@ from . import artwork as art
 from . import patterns, tabslot
 from . import text as lettering
 from .bends import BendLine, BendMath
+from .checkpoints import Checkpoint, checkpoints
 from .shapes import Circle, Cut, Loop, loop_of
 
 CORNER_GAP = 0.3  # clearance between walls (and lips) meeting at a corner
@@ -50,6 +51,7 @@ class Blank:
     bends: list[BendLine]
     fixed_point: tuple[float, float]
     folded_bbox: tuple[float, float, float, float, float, float]
+    checks: list[Checkpoint] = field(default_factory=list)
 
     @property
     def flat_bbox(self) -> tuple[float, float, float, float]:
@@ -123,6 +125,7 @@ class _Builder:
         self.bends: list[BendLine] = []
         self.cuts: list[Cut] = []
         self.wall_tops: dict[str, float] = {}
+        self.tab_len: dict[str, float] = {}
 
     def _intrusion(self, side: str) -> float:
         wall = self.part.walls.get(side)
@@ -181,6 +184,7 @@ class _Builder:
                         f.rect(s - tab.width / 2, s + tab.width / 2, u_top - 0.01, u_top + length)
                     )
                 self.wall_tops[side] = max(self.wall_tops[side], wall.height + length)
+                self.tab_len[side] = max(self.tab_len.get(side, 0.0), length)
 
     def _wall_bend(self, side: str, f: _Frame) -> None:
         if side in ("front", "back"):
@@ -304,6 +308,7 @@ class _Builder:
             bends=bends,
             fixed_point=(round(fixed.x, 6), round(fixed.y, 6)),
             folded_bbox=(-w / 2, -d / 2, -self.t, w / 2, d / 2, z1),
+            checks=checkpoints(self.part, self.t, self.r, self.tab_len),
         )
 
 

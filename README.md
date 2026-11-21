@@ -1,4 +1,4 @@
-# swlamp-mcp
+# MakerSG SolidWorks MCP (swlamp-mcp)
 
 MCP server mã nguồn mở để Claude thiết kế đèn decor bằng tôn (cắt laser, chấn) trên SolidWorks 2025. Claude viết bản mô tả (spec) YAML cho một mẫu đèn. Với mỗi đơn hàng, server dựng part sheet metal trong SolidWorks đang mở và tạo một thư mục riêng cho đơn, gồm:
 
@@ -19,7 +19,7 @@ MCP server mã nguồn mở để Claude thiết kế đèn decor bằng tôn (c
 - Chi tiết in 3D: bạn tự dựng model tham số có biến toàn cục `ord_*`. MCP sao chép model, đổi biến theo đơn rồi xuất 3MF/STL.
 - Hiệu chỉnh hệ số K bằng thanh thử chữ L. K được lưu theo xưởng, vật liệu, độ dày và độ mở cối V.
 - DXF chỉ được giao khi cả hai cổng kiểm đều đạt:
-  - part SolidWorks dựng ra khớp kích thước ngoài trong spec trong 0.05 mm;
+  - part SolidWorks dựng ra khớp kích thước ngoài trong spec trong 0.05 mm, kiểm cả khung bao lẫn từng đặc điểm (đỉnh mỗi vách, mép trong của mép gập, đầu hem, đỉnh tab);
   - flat pattern của SolidWorks khớp file DXF trong 0.05 mm.
 
 Phiên bản đã kiểm: **SolidWorks 2025 SP5** (bản desktop), Windows 10, Python 3.11. Phiên bản SW khác chưa kiểm; nếu bạn chạy được hoặc gặp lỗi, hãy báo lại.
@@ -29,8 +29,8 @@ Phiên bản đã kiểm: **SolidWorks 2025 SP5** (bản desktop), Windows 10, P
 Yêu cầu: Windows, SolidWorks 2025 có license, [uv](https://docs.astral.sh/uv/).
 
 ```powershell
-git clone <repo> swlamp-mcp
-cd swlamp-mcp
+git clone https://github.com/hub-makersg/makersg-solidworks-mcp.git
+cd makersg-solidworks-mcp
 uv sync
 uv run swlamp-mcp --prepare   # tạo sẵn wrapper COM cho SolidWorks 2025
 ```
@@ -99,4 +99,12 @@ Dự án tham khảo ý tưởng (không sao chép mã) từ các repo MIT sau:
 
 Quy tắc gia công lấy từ hướng dẫn công khai của Protolabs, Hubs, SendCutSend và TheFabricator.
 
-Giấy phép: MIT.
+## Giấy phép và nhãn hiệu
+
+Mã nguồn phát hành theo giấy phép [MIT](LICENSE), © MakerSG Workshop và những người đóng góp.
+
+Mọi thư viện phụ thuộc đều dùng giấy phép mở dễ dãi, tương thích với MIT: MIT, BSD, Apache-2.0, PSF, MIT-CMU (Pillow). Repo không đóng gói lại font, thư viện hay type library của SolidWorks. Wrapper COM được sinh trên máy người dùng từ bản SolidWorks có license của chính họ.
+
+SOLIDWORKS là nhãn hiệu của Dassault Systèmes. Dự án này độc lập, không liên kết và không được Dassault Systèmes bảo trợ. Tên SOLIDWORKS chỉ được dùng để chỉ phần mềm mà dự án tương thích.
+
+*Made by [MakerSG](https://makersg.com) for the maker community.*

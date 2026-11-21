@@ -10,6 +10,8 @@ from swlamp.kfactor.table import KTable
 from swlamp.order.pipeline import PartOutcome, run_order
 from swlamp.spec.merge import SpecError
 
+from .fakes import hits_for
+
 TEMPLATE = {
     "name": "t",
     "material": "steel",
@@ -29,8 +31,9 @@ TEMPLATE = {
 class Fake:
     """Writes what SolidWorks would; ``shift_hole`` moves the hole in its flat export."""
 
-    def __init__(self, shift_hole=0.0, errors=None, raise_exc=None):
+    def __init__(self, shift_hole=0.0, errors=None, raise_exc=None, feature_shift=0.0):
         self.shift_hole, self.errors, self.raise_exc = shift_hole, errors or [], raise_exc
+        self.feature_shift = feature_shift
         self.printed = []
 
     def produce(self, parts, printed):
@@ -51,7 +54,8 @@ class Fake:
             doc.saveas(pj.sw_flat)
             for f in (pj.sldprt, *pj.meshes, pj.image):
                 f.write_bytes(b"x")
-            out.append(PartOutcome(tuple(pj.blank.folded_bbox), list(self.errors)))
+            hits = hits_for(pj.blank, self.feature_shift)
+            out.append(PartOutcome(tuple(pj.blank.folded_bbox), list(self.errors), hits))
         for job in printed:
             self.printed.append(job)
             for m in job.meshes:
@@ -120,3 +124,37 @@ def test_missing_printed_model_is_refused_before_building(tmp_path):
     with pytest.raises(SpecError, match="none.SLDPRT"):
         run(tmp_path, Fake(), template)
     assert not (tmp_path / "out").exists()
+
+
+def test_wall_top_off_by_02_fails_even_when_overall_box_matches(tmp_path):
+    report = run(tmp_path, Fake(feature_shift=0.2))
+    assert report.status == "error"
+    assert any("đỉnh vách" in e and "spec z" in e for e in report.errors)
+    assert list(Path(report.folder).glob("*.dxf")) == []
+
+
+def test_lip_and_hem_features_are_all_checked(tmp_path):
+    template = {
+        **TEMPLATE,
+        "parts": [
+            {
+                **TEMPLATE["parts"][0],
+                "walls": {
+                    "front": {"height": 30, "lip": 8},
+                    "back": {"height": 30, "hem": {"length": 8}},
+                },
+            }
+        ],
+    }
+    report = run(tmp_path, Fake(), template)
+    assert report.status == "ok", report.errors
+    names = [c.name for c in plan_checks(template)]
+    assert names == ["front: đỉnh vách", "front: mép trong của mép gập", "back: đầu hem"]
+
+
+def plan_checks(template):
+    from swlamp.order.pipeline import plan
+    from swlamp.spec.models import Order
+
+    _, _, blanks = plan(template, Order(order_id="x"), KTable(Path("unused.json")))
+    return blanks[0].checks

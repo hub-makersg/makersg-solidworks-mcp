@@ -50,6 +50,7 @@ class PrintedJob:
 class PartOutcome:
     bbox: tuple[float, ...]
     errors: list[str] = field(default_factory=list)
+    hits: list[tuple[float, float, float] | None] = field(default_factory=list)  # mm
 
 
 class Steps(Protocol):
@@ -73,7 +74,7 @@ class SolidWorksSteps:
                 for pj in parts:
                     r = builder.build(sw, pj.blank, pj.sldprt)
                     opened.append(r.title)
-                    outcomes.append(PartOutcome(r.bbox, list(r.errors)))
+                    outcomes.append(PartOutcome(r.bbox, list(r.errors), list(r.hits)))
                     if r.errors:
                         continue
                     export.flat_dxf(sw, r.doc, pj.sw_flat)
@@ -108,6 +109,18 @@ def _within(measured: tuple[float, ...], predicted: tuple[float, ...]) -> list[s
         for n, m, p in zip(names, measured, predicted, strict=True)
         if abs(m - p) > DIM_TOL
     ]
+
+
+def _missing_features(hits: list, blank: Blank) -> list[str]:
+    """Each promised feature dimension: its ray must first hit the body at that coordinate."""
+    out = []
+    for i, cp in enumerate(blank.checks):
+        hit = hits[i] if i < len(hits) else None
+        if hit is not None and abs(hit[cp.axis] - cp.value) <= DIM_TOL:
+            continue
+        got = f"{hit[cp.axis]:.3f} mm" if hit is not None else "không chạm mặt nào"
+        out.append(f"{cp.name}: SolidWorks {got}, spec {'xyz'[cp.axis]} = {cp.value:.3f} mm")
+    return out
 
 
 def _load(value: dict | str | Path | None) -> dict | None:
@@ -185,6 +198,7 @@ def run_order(
             report.errors += [f"{pj.blank.part}: {e}" for e in outcome.errors]
             if not outcome.errors:
                 off = _within(outcome.bbox, pj.blank.folded_bbox)
+                off += _missing_features(outcome.hits, pj.blank)
                 report.errors += [f"{pj.blank.part}: kích thước dạng gập lệch — {o}" for o in off]
         if not report.errors:
             for pj, pr in zip(part_jobs, report.parts, strict=True):

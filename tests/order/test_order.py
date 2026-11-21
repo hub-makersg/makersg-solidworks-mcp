@@ -9,6 +9,8 @@ from swlamp.kfactor.table import CALIBRATED, Entry, Key, KTable
 from swlamp.order.pipeline import PartOutcome, run_order
 from swlamp.paths import Guard, PathEscape, new_order_dir
 
+from .fakes import hits_for
+
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 TEMPLATE = EXAMPLES / "box4-inox08.template.yaml"
 
@@ -34,7 +36,7 @@ class FakeSolidWorks:
                 f.write_bytes(b"x")
             bbox = list(pj.blank.folded_bbox)
             bbox[3] += self.offset
-            out.append(PartOutcome(tuple(bbox)))
+            out.append(PartOutcome(tuple(bbox), hits=hits_for(pj.blank)))
         return out
 
 
