@@ -40,6 +40,9 @@ def mesh(sw: Sw, doc, path: Path) -> Path:
     ok, err, _warn = ext.SaveAs3(str(path), 0, options, None, None, 0, 0)
     if not ok or not path.exists() or path.stat().st_size == 0:
         raise ExportError(f"Không xuất được {path.name} (mã lỗi {err}).")
+    actual = next(p for p in path.parent.iterdir() if p.name.lower() == path.name.lower())
+    if actual.name != path.name:  # SolidWorks upper-cases some extensions (".STL")
+        actual.rename(path)
     return path
 
 

@@ -203,8 +203,15 @@ def build(sw: Sw, blank: Blank, path: Path) -> BuildResult:
     if raw is None:
         raise BuildError("SolidWorks không tạo được part mới.")
     d = _Doc(sw, raw)
-    _base_flange(d, blank)
-    errors = [e for e in (_bend(d, blank, b) for b in blank.bends) if e]
+    view = sw.typed(d.doc.ActiveView, "IModelView")
+    sw.app.CommandInProgress = True  # fewer redraws for out-of-process callers
+    view.EnableGraphicsUpdate = False
+    try:
+        _base_flange(d, blank)
+        errors = [e for e in (_bend(d, blank, b) for b in blank.bends) if e]
+    finally:
+        view.EnableGraphicsUpdate = True
+        sw.app.CommandInProgress = False
     _hide_sketches(d)
     d.doc.ShowNamedView2("*Isometric", 7)
     d.doc.ViewZoomtofit2()
